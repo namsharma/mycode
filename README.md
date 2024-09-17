@@ -1,52 +1,44 @@
-// Helper function to check if a class exists on the page
-function classExists(className) {
-    return document.querySelector(className) !== null;
-}
+<!-- Include jQuery library before this script -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Set the default filter to "all"
+    $('.product-filter[data-product-filter="all"]').addClass('active');
 
-// Function to add the loading spinner
-function showLoadingSpinner() {
-    if (classExists(".search-results")) {
-        $(".search-results").parent().prepend("<div class='searchloader'><span class='loaderimg'></span><p>Search results are loading...</p></div>");
-    }
-    if (classExists(".no-results")) {
-        $(".no-results").css("display", "none");
-    }
-}
-
-// Initial loading spinner and hide "no results" message
-showLoadingSpinner();
-
-// Set a timeout to add the spinner if the URL contains '#e'
-setTimeout(function() {
-    if (window.location.href.indexOf("#e") > 0) {
-        showLoadingSpinner();
-    }
-}, 700);
-
-// Click event for the search button
-$(".search-box-button").click(function() {
-    showLoadingSpinner();
-});
-
-// Event listener for "Enter" key in the search input field
-const getinput = document.getElementById("searchbar__input_resultPage");
-if (getinput) {
-    getinput.addEventListener("keydown", function(n) {
-        if (n.code === "Enter") {
-            validate(n);
+    function filterProducts(filter) {
+        if (filter === "all") {
+            // Show all product cards
+            $('.product-suite-card').fadeIn();
+        } else {
+            // Filter product cards based on data-product-filter
+            $('.product-suite-card').each(function() {
+                var tags = $(this).data('product-suite-tags');
+                if (tags === filter) {
+                    $(this).fadeIn();
+                } else {
+                    $(this).fadeOut();
+                }
+            });
         }
-    });
-}
 
-// MutationObserver to monitor changes in the search results
-if (classExists(".search-results")) {
-    const observer = new MutationObserver(function(mutations) {
-        mutations.forEach(function(mutation) {
-            if (mutation.type === "childList") {
-                $(".searchloader").fadeOut();
-            }
-        });
+        // Update results count
+        var visibleCount = $('.product-suite-card:visible').length;
+        $('.suite-card-count').text(visibleCount);
+    }
+
+    // Click event handler for product filters
+    $('.product-filter').on('click', function() {
+        var filter = $(this).data('product-filter');
+
+        // Update active filter class
+        $('.product-filter').removeClass('active');
+        $(this).addClass('active');
+
+        // Call filter function
+        filterProducts(filter);
     });
 
-    observer.observe(document.querySelector(".search-results"), { childList: true, subtree: true });
-}
+    // Initialize results count
+    filterProducts("all");
+});
+</script>
