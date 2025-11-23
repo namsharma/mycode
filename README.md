@@ -1,133 +1,159 @@
-(function($){
-  // Map data-* attribute -> query param name
-  const ATTR_TO_PARAM = {
-    'data-region': 'region',
-    'data-industry': 'industry',
-    'data-persona-type': 'role'
-  };
+// -------------------------
+// FILTER CHECKBOX INIT + URL SYNC
+// -------------------------
 
-  // Read current URLSearchParams into a plain object of arrays
-  function readAllParams() {
-    const usp = new URLSearchParams(window.location.search);
-    const out = {};
-    for (const key of usp.keys()) {
-      out[key] = usp.getAll(key);
-    }
-    return out;
-  }
+// small global flag to suppress history updates while we restore state
+var suppressHistoryPush = false;
 
-  // Rebuild URL's search string from params object (object values are arrays)
-  function writeParams(paramsObj) {
-    const usp = new URLSearchParams();
-    Object.keys(paramsObj).forEach(k => {
-      (paramsObj[k] || []).forEach(v => {
-        if (v !== undefined && v !== null && v !== '') usp.append(k, v);
-      });
+/* -------------------------------------------------------
+   Click handler for checkboxes (UI behavior preserved).
+   We guard the history push so init can suppress it.
+   ------------------------------------------------------- */
+$(document).on('click', '.category-checkbox', function () {
+
+    const selectedRegions = [];
+    const selectedIndustries = [];
+    const selectedRoles = [];
+
+    $('.category-checkbox.active').each(function () {
+        const region = $(this).data('region');
+        const industry = $(this).data('industry-category');
+        const role = $(this).data('persona-type');
+
+        if (region) selectedRegions.push(region);
+        if (industry) selectedIndustries.push(industry);
+        if (role) selectedRoles.push(role);
     });
-    const newUrl = window.location.pathname + (usp.toString() ? '?' + usp.toString() : '') + window.location.hash;
-    history.replaceState(null, '', newUrl);
-  }
 
-  // Add a value (avoid duplicate) to a param array
-  function addParamValue(paramsObj, key, value) {
-    paramsObj[key] = paramsObj[key] || [];
-    if (!paramsObj[key].includes(value)) paramsObj[key].push(value);
-  }
+    const url = new URL(window.location.href);
+    const params = new URLSearchParams(url.search);
 
-  // Remove a single value from param array (and delete key if empty)
-  function removeParamValue(paramsObj, key, value) {
-    if (!paramsObj[key]) return;
-    paramsObj[key] = paramsObj[key].filter(v => v !== value);
-    if (paramsObj[key].length === 0) delete paramsObj[key];
-  }
+    // Remove existing filter keys and append current ones
+    params.delete('region');
+    selectedRegions.forEach(v => params.append('region', v));
 
-  // Given a .category-checkbox element, detect which param it corresponds to and its value
-  function getParamInfo($elem) {
-    for (const attr in ATTR_TO_PARAM) {
-      const val = $elem.attr(attr);
-      if (typeof val !== 'undefined') {
-        return { key: ATTR_TO_PARAM[attr], value: String(val) };
-      }
-    }
-    return null;
-  }
+    params.delete('industry');
+    selectedIndustries.forEach(v => params.append('industry', v));
 
-  // On change handler for inputs (delegated)
-  $(document).on('change', '.checkbox__trigger', function(e){
-    const $input = $(this);
-    const $category = $input.closest('.category-checkbox');
-    const info = getParamInfo($category);
-    if (!info) return; // nothing to do if structure unexpected
+    params.delete('role');
+    selectedRoles.forEach(v => params.append('role', v));
 
-    const params = readAllParams();
-    if ($input.prop('checked')) {
-      addParamValue(params, info.key, info.value);
+    const newQuery = params.toString();
+    const newUrl = `${url.pathname}${newQuery ? `?${newQuery}` : ''}`;
+
+    if (!suppressHistoryPush) {
+      // Normal user-driven clicks update history as before
+      window.history.pushState({ path: newUrl }, '', newUrl);
     } else {
-      removeParamValue(params, info.key, info.value);
+      // suppressed during init to avoid partial/overwriting querystring
     }
-    writeParams(params);
-  });
+});
 
-  // Check checkboxes that match current URL params.
-  // `suppressUrlUpdate` true means we will NOT change the URL while checking (used on init / dynamic addition).
-  function applyParamsToCheckboxes(suppressUrlUpdate = true) {
-    const params = readAllParams();
-    // For each category-checkbox on page, check if its value is present in params
-    $('.category-checkbox').each(function(){
-      const $cat = $(this);
-      const info = getParamInfo($cat);
-      if (!info) return;
-      const $input = $cat.find('.checkbox__trigger').first();
-      const shouldBeChecked = (params[info.key] || []).indexOf(info.value) !== -1;
-      // Only change checked state if it's different
-      if ($input.length) {
-        if ($input.prop('checked') !== shouldBeChecked) {
-          $input.prop('checked', shouldBeChecked);
-          // If the site has other UI updates tied to clicking labels, trigger change event but avoid URL write
-          if (suppressUrlUpdate) {
-            $input.triggerHandler('change'); // triggerHandler doesn't bubble and doesn't call delegated handler; avoids URL update
-          } else {
-            $input.trigger('change'); // this will call handler and update URL
-          }
-        }
-      }
-    });
+/* -------------------------------------------------------
+   Helper: build a combined URL from active checkboxes and
+   preserve other existing params (like personalized, campaign).
+   ------------------------------------------------------- */
+function updateUrlFromActiveCheckboxes(useReplaceState = false) {
+  const original = new URL(window.location.href);
+  const originalParams = new URLSearchParams(original.search);
+
+  // copy any params we should preserve (all except the three filter keys)
+  const finalParams = new URLSearchParams();
+  for (const [k, v] of originalParams.entries()) {
+    if (k !== 'region' && k !== 'industry' && k !== 'role') {
+      finalParams.append(k, v);
+    }
   }
 
-  // Run on initial load
-  $(function(){
-    applyParamsToCheckboxes(true);
+  // append the active filters (read from DOM)
+  $('.category-checkbox.active').each(function () {
+    const r = $(this).data('region');
+    const ind = $(this).data('industry-category');
+    const rl = $(this).data('persona-type');
+
+    if (r) finalParams.append('region', r);
+    if (ind) finalParams.append('industry', ind);
+    if (rl) finalParams.append('role', rl);
   });
 
-  // Observe DOM for dynamically added .category-checkbox nodes (for Industry / Persona)
-  // When found, applyParamsToCheckboxes for just those newly-added elements.
-  (function watchForDynamicCheckboxes(){
-    const observer = new MutationObserver(function(mutations){
-      let found = false;
-      mutations.forEach(m => {
-        // check added nodes
-        m.addedNodes && Array.from(m.addedNodes).forEach(node => {
-          if (!(node instanceof HTMLElement)) return;
-          // if the node itself is a category-checkbox or contains them, mark found
-          if ($(node).is('.category-checkbox') || $(node).find('.category-checkbox').length) {
-            found = true;
-          }
+  const base = window.location.origin + window.location.pathname;
+  const q = finalParams.toString();
+  const newUrl = q ? base + '?' + q : base;
+
+  if (useReplaceState) {
+    window.history.replaceState({ path: newUrl }, '', newUrl);
+  } else {
+    window.history.pushState({ path: newUrl }, '', newUrl);
+  }
+}
+
+/* -------------------------------------------------------
+   Initialization: read query, trigger matching checkboxes,
+   suppress per-click history updates and do one final push.
+   - Normalizes case and trims whitespace when comparing.
+   - Waits for .category-checkbox to exist before running.
+   ------------------------------------------------------- */
+$(document).ready(function () {
+    const originalQuery = window.location.href.split('?')[1] || '';
+    const params = new URLSearchParams(originalQuery);
+
+    // Grab arrays of filter values from the querystring and normalize
+    const regions = params.getAll("region").map(v => (v || '').toString().toLowerCase().trim());
+    const industries = params.getAll("industry").map(v => (v || '').toString().toLowerCase().trim());
+    const roles = params.getAll("role").map(v => (v || '').toString().toLowerCase().trim());
+
+    // wait-for-element helper (polling). Runs callback once .category-checkbox exists or
+    // times out after maxWaitMs.
+    function waitForCheckboxesAndRun(callback, maxWaitMs = 3000, intervalMs = 100) {
+      const start = Date.now();
+      const iv = setInterval(function () {
+        if ($('.category-checkbox').length) {
+          clearInterval(iv);
+          callback();
+        } else if (Date.now() - start > maxWaitMs) {
+          clearInterval(iv);
+          // timed out — still try to run callback once to avoid leaving page unusable
+          callback();
+        }
+      }, intervalMs);
+    }
+
+    function clickMatchingCheckboxes() {
+        // Temporarily suppress per-click history updates
+        suppressHistoryPush = true;
+
+        $(".category-checkbox").each(function () {
+            const $checkbox = $(this);
+
+            // Read data attributes and normalize them for comparison
+            const regionAttr = ($checkbox.data("region") || '').toString().toLowerCase().trim();
+            const industryAttr = ($checkbox.data("industry-category") || '').toString().toLowerCase().trim();
+            const roleAttr = ($checkbox.data("persona-type") || '').toString().toLowerCase().trim();
+
+            const regionMatch = regionAttr && regions.length && regions.indexOf(regionAttr) > -1;
+            const industryMatch = industryAttr && industries.length && industries.indexOf(industryAttr) > -1;
+            const roleMatch = roleAttr && roles.length && roles.indexOf(roleAttr) > -1;
+
+            if (regionMatch || industryMatch || roleMatch) {
+                // Trigger the normal click handler so all UI side-effects run
+                // (tag bubbles, counts, fadeIn/fadeOut etc.)
+                // Ensure the element is visible first (if hidden by some parent) so click works reliably
+                if (!$checkbox.is(':visible')) {
+                  $checkbox.show();
+                }
+                $checkbox.trigger("click");
+            }
         });
-      });
-      if (found) {
-        // when dynamic elements appear, apply params to newly added ones (do not rewrite URL)
-        applyParamsToCheckboxes(true);
-      }
-    });
 
-    observer.observe(document.body, { childList: true, subtree: true });
-  })();
+        // Give the click handlers time to finish DOM updates, then re-enable history push
+        setTimeout(function () {
+            suppressHistoryPush = false;
+            // push a single combined URL reflecting all active filters
+            // Use pushState so it behaves like manual clicks; change to replaceState(true) if you prefer no extra history entry.
+            updateUrlFromActiveCheckboxes(false);
+        }, 300); // adjust if your page requires more time
+    }
 
-  // Extra helper: allow link clicks that contain query params to set checkboxes automatically.
-  // If you navigate via link (same page) with new params, the replaceState above won't trigger load.
-  // So listen for popstate to handle back/forward or manual URL edits.
-  window.addEventListener('popstate', function(){
-    applyParamsToCheckboxes(true);
-  });
-
-})(jQuery);
+    // Run when checkboxes present (or after timeout)
+    waitForCheckboxesAndRun(clickMatchingCheckboxes, 5000, 100);
+});
