@@ -1,8 +1,9 @@
 // -------------------------
-// SAFER FILTER INIT + URL SYNC (no triggering of click handlers)
+// Robust filter-init + URL sync (no triggering of click handlers)
+// Waits for window.onload and re-applies final URL to survive other scripts.
 // -------------------------
 
-// Keep existing click handler mostly unchanged (it still updates URL on user clicks)
+// Keep normal click handler for user interactions (unchanged)
 $(document).on('click', '.category-checkbox', function () {
     const selectedRegions = [];
     const selectedIndustries = [];
@@ -33,12 +34,10 @@ $(document).on('click', '.category-checkbox', function () {
     const newQuery = params.toString();
     const newUrl = `${url.pathname}${newQuery ? `?${newQuery}` : ''}`;
 
-    // user clicks should still push history
     window.history.pushState({ path: newUrl }, '', newUrl);
 });
 
-
-// Helper: create tag bubble if not already present
+// helper - create tag bubble if not present
 function ensureTagBubble(tagValue, displayText, isPrimary = false) {
   if (!tagValue) return;
   const sel = `.selected-tags-container .tag-bubble[data-tag-value="${tagValue}"]`;
@@ -51,21 +50,20 @@ function ensureTagBubble(tagValue, displayText, isPrimary = false) {
   }
 }
 
-
-// Build final URL preserving unrelated params and set it (replaceState to avoid extra history entry)
-function pushCombinedFiltersToUrl(useReplace = true) {
+// build and set final URL (preserve other params). useReplace true => replaceState
+function setCombinedFilterUrl(useReplace = true) {
   const original = new URL(window.location.href);
   const originalParams = new URLSearchParams(original.search);
 
   const finalParams = new URLSearchParams();
-  // preserve other params except region/industry/role
+  // preserve all params except our three filter keys
   for (const [k, v] of originalParams.entries()) {
     if (k !== 'region' && k !== 'industry' && k !== 'role') {
       finalParams.append(k, v);
     }
   }
 
-  // append from DOM active checkboxes
+  // append filters from DOM
   $('.category-checkbox.active').each(function () {
     const r = $(this).data('region');
     const ind = $(this).data('industry-category');
@@ -82,14 +80,15 @@ function pushCombinedFiltersToUrl(useReplace = true) {
 
   if (useReplace) {
     window.history.replaceState({ path: newUrl }, '', newUrl);
+    console.log('[filters] replaceState set to:', newUrl);
   } else {
     window.history.pushState({ path: newUrl }, '', newUrl);
+    console.log('[filters] pushState set to:', newUrl);
   }
 }
 
-
-// Wait helper: call cb once .category-checkbox exists (or after timeout)
-function waitForCheckboxes(cb, maxWaitMs = 5000, interval = 100) {
+// wait for checkboxes to exist (or timeout) then run callback
+function waitForCheckboxes(cb, maxWaitMs = 7000, interval = 100) {
   const start = Date.now();
   const iv = setInterval(() => {
     if ($('.category-checkbox').length) {
@@ -97,23 +96,21 @@ function waitForCheckboxes(cb, maxWaitMs = 5000, interval = 100) {
       cb();
     } else if (Date.now() - start > maxWaitMs) {
       clearInterval(iv);
-      cb(); // try anyway
+      console.warn('[filters] waitForCheckboxes timed out, running callback anyway');
+      cb();
     }
   }, interval);
 }
 
-
-// Direct activation function: does NOT trigger clicks that may navigate
+// Activate checkboxes from the querystring WITHOUT triggering click handlers
 function activateFiltersFromQuery() {
   const originalQuery = window.location.href.split('?')[1] || '';
   const params = new URLSearchParams(originalQuery);
 
-  // Normalize arrays (lowercase + trim)
   const regions = params.getAll("region").map(v => (v || '').toString().toLowerCase().trim());
   const industries = params.getAll("industry").map(v => (v || '').toString().toLowerCase().trim());
   const roles = params.getAll("role").map(v => (v || '').toString().toLowerCase().trim());
 
-  // For each checkbox, if its data-* matches any param, set it active directly
   $(".category-checkbox").each(function () {
     const $cb = $(this);
     const regionAttr = ($cb.data("region") || '').toString().toLowerCase().trim();
@@ -127,15 +124,16 @@ function activateFiltersFromQuery() {
     if (roleAttr && roles.length && roles.indexOf(roleAttr) > -1) shouldActivate = true;
 
     if (shouldActivate) {
-      // mark active and check input
       if (!$cb.hasClass('active')) $cb.addClass('active');
-      $cb.find('.checkbox__trigger').prop('checked', true);
+      // check the input if present
+      const $input = $cb.find('.checkbox__trigger');
+      if ($input.length) $input.prop('checked', true);
 
-      // add a tag bubble (avoid duplication)
+      // create tag bubble for UI
       const tagValue = regionAttr || industryAttr || roleAttr;
       ensureTagBubble(tagValue, displayText, false);
 
-      // if the checkbox wrapper was hidden by earlier hide logic, unhide it
+      // make wrapper visible if previously hidden
       const $wrapper = $cb.closest('.checkbox-wrapper-33');
       if ($wrapper.length && $wrapper.is(':hidden')) {
         $wrapper.show();
@@ -143,27 +141,37 @@ function activateFiltersFromQuery() {
     }
   });
 
-  // Now call the shared helpers that depend on the DOM state (do not trigger clicks)
-  // Recalculate counts / show-more / etc. If these functions exist, call them.
+  // call your existing helpers safely (they depend on DOM state)
   if (typeof tagCheckRemaining === 'function') {
-    tagCheckRemaining();
+    try { tagCheckRemaining(); } catch (e) { console.warn('tagCheckRemaining error', e); }
   }
   if (typeof countCard === 'function') {
-    countCard();
+    try { countCard(); } catch (e) { console.warn('countCard error', e); }
   }
   if (typeof addOrRemoveClearFiltersLink === 'function') {
-    addOrRemoveClearFiltersLink();
+    try { addOrRemoveClearFiltersLink(); } catch (e) { console.warn('addOrRemoveClearFiltersLink error', e); }
   }
 
-  // a short defer to allow show/hide animations to settle, then set final URL
-  setTimeout(function () {
-    // set final URL to reflect active filters; use replaceState to avoid polluting history
-    pushCombinedFiltersToUrl(true);
-  }, 150);
+  // set final URL now (replaceState to avoid creating an init history entry)
+  setTimeout(() => setCombinedFilterUrl(true), 150);
 }
 
 
-// Run initialization safely when ready
-$(document).ready(function () {
-  waitForCheckboxes(activateFiltersFromQuery, 5000, 100);
+// MAIN: wait for full window load, then wait for checkboxes, then activate
+// Using window.onload makes this run after other resources / scripts that run on load.
+window.addEventListener('load', function () {
+  // wait for the checkbox DOM to exist
+  waitForCheckboxes(function () {
+    // activate the filters from the querystring (without triggering clicks)
+    activateFiltersFromQuery();
+
+    // Re-apply final combined URL a couple more times to beat other late scripts that may rewrite it.
+    // This is pragmatic: it wins race conditions where another script modifies the URL a little later.
+    // 1st reapply: after 500ms
+    setTimeout(() => setCombinedFilterUrl(true), 500);
+    // 2nd reapply: after 1500ms
+    setTimeout(() => setCombinedFilterUrl(true), 1500);
+    // 3rd reapply (optional): after 3000ms — uncomment if you see very late scripts
+    // setTimeout(() => setCombinedFilterUrl(true), 3000);
+  }, 7000, 120);
 });
