@@ -1,57 +1,93 @@
 (function ($) {
-    function isValid($input) {
+    function getFormInput($form) {
+        return $form
+            .find('.search-box-input.searchbar__input.js-search-hero-input.tt-input')
+            .eq(0);
+    }
+
+    function isValid($form) {
+        var $input = getFormInput($form);
+        if (!$input.length) return false;
+
         var currentValue = $.trim($input.val());
-        var lastValue = $input.data('lastValue') || "";
+        var lastValue = $form.data('lastValue') || "";
+
+        // must be non-empty and not same as last submitted value
         return currentValue !== "" && currentValue !== lastValue;
     }
 
-    function updateButtonState($input) {
-        var $form = $input.closest('.searchbar__form');
-        var $btn  = $form.find('.search-box-button');
-        $btn.prop('disabled', !isValid($input));
+    function updateButtonState($form) {
+        var $btn = $form.find('.search-box-button');
+        $btn.prop('disabled', !isValid($form));
     }
 
-    $(document).on('focus', '.searchbar__form .search-box-input.searchbar__input.js-search-hero-input.tt-input', function () {
-        var $input = $(this);
-        var $form  = $input.closest('.searchbar__form');
-        var $btn   = $form.find('.search-box-button');
+    // When input gets focus, initialize per-form state
+    $(document).on(
+        'focus',
+        '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
+        function () {
+            var $form = $(this).closest('.searchbar__form');
 
-        if (!$input.data('initialized')) {
-            $btn.prop('disabled', true);       
-            $input.data('lastValue', "");      
-            $input.data('initialized', true);  
+            if (!$form.data('initialized')) {
+                $form.data('lastValue', "");
+                $form.data('initialized', true);
+            }
+
+            updateButtonState($form);
         }
+    );
 
-        updateButtonState($input);
-    });
+    // On typing / changing value, update the correct form's button
+    $(document).on(
+        'input keyup change',
+        '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
+        function () {
+            var $form = $(this).closest('.searchbar__form');
+            updateButtonState($form);
+        }
+    );
 
-    $(document).on('input keyup change', '.searchbar__form .search-box-input.searchbar__input.js-search-hero-input.tt-input', function () {
-        var $input = $(this);
-        updateButtonState($input);
-    });
+    // Block Enter key in the input when invalid
+    $(document).on(
+        'keydown',
+        '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
+        function (e) {
+            if (e.key === 'Enter' || e.keyCode === 13) {
+                var $form = $(this).closest('.searchbar__form');
 
+                if (!isValid($form)) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    console.log('Enter blocked: empty or same value');
+                    return false;
+                }
+            }
+        }
+    );
+
+    // Block form submit when invalid (covers both forms)
     $(document).on('submit', '.searchbar__form', function (e) {
-        var $form  = $(this);
-        var $input = $form.find('.search-box-input.searchbar__input.js-search-hero-input.tt-input').first();
+        var $form = $(this);
 
-        if (!isValid($input)) {
+        if (!isValid($form)) {
             e.preventDefault();
             e.stopImmediatePropagation();
-            console.log('Search blocked: empty or same value');
+            console.log('Search blocked: empty or same value (submit)');
             return false;
         }
 
-        $input.data('lastValue', $.trim($input.val()));
+        var $input = getFormInput($form);
+        $form.data('lastValue', $.trim($input.val()));
 
+        // Disable only this form's button
         $form.find('.search-box-button').prop('disabled', true);
     });
 
+    // Block button click when invalid
     $(document).on('click', '.search-box-button', function (e) {
-        var $btn   = $(this);
-        var $form  = $btn.closest('.searchbar__form');
-        var $input = $form.find('.search-box-input.searchbar__input.js-search-hero-input.tt-input').first();
+        var $form = $(this).closest('.searchbar__form');
 
-        if (!isValid($input)) {
+        if (!isValid($form)) {
             e.preventDefault();
             e.stopImmediatePropagation();
             console.log('Button click blocked: empty or same value');
