@@ -8,14 +8,40 @@
             .eq(0);
     }
 
+    function getLastValue($form) {
+        // per-form value if we already have it
+        var local = $form.data('lastValue');
+        if (typeof local !== 'undefined') {
+            return local;
+        }
+
+        // otherwise check sessionStorage (shared across forms/pages)
+        var global = "";
+        try {
+            if (window.sessionStorage) {
+                global = sessionStorage.getItem('fisLastSearch') || "";
+            }
+        } catch (e) {}
+        return $.trim(global || "");
+    }
+
+    function setLastValue($form, value) {
+        $form.data('lastValue', value);
+        try {
+            if (window.sessionStorage) {
+                sessionStorage.setItem('fisLastSearch', value);
+            }
+        } catch (e) {}
+    }
+
     function isValid($form) {
         var $input = getFormInput($form);
         if (!$input.length) return false;
 
         var currentValue = $.trim($input.val());
-        var lastValue = $form.data('lastValue') || "";
+        var lastValue    = getLastValue($form);
 
-        // must be non-empty and not the same as last submitted value
+        // must be non-empty and not same as last submitted
         return currentValue !== "" && currentValue !== lastValue;
     }
 
@@ -24,54 +50,9 @@
         $btn.prop('disabled', !isValid($form));
     }
 
-    function setLastValue($form, value) {
-        $form.data('lastValue', value);
+    // ------- events -------
 
-        // also persist globally for next page load
-        try {
-            if (window.sessionStorage) {
-                sessionStorage.setItem('fisLastSearch', value);
-            }
-        } catch (e) {
-            // ignore storage errors
-        }
-    }
-
-    function getInitialLastValue() {
-        var last = "";
-
-        try {
-            // 1) from URL: ?textBoxSearch=...
-            var params = new URLSearchParams(window.location.search);
-            last = params.get('textBoxSearch') || "";
-
-            // 2) fall back to sessionStorage if URL has nothing
-            if (!last && window.sessionStorage) {
-                last = sessionStorage.getItem('fisLastSearch') || "";
-            }
-        } catch (e) {
-            // ignore
-        }
-
-        return $.trim(last || "");
-    }
-
-    // ------- initialisation on page load -------
-
-    $(function () {
-        var initialLast = getInitialLastValue();
-
-        $('.searchbar__form').each(function () {
-            var $form = $(this);
-            $form.data('initialized', true);
-            $form.data('lastValue', initialLast);
-            updateButtonState($form); // in case inputs are prefilled
-        });
-    });
-
-    // ------- jQuery events -------
-
-    // typing: enable/disable button live
+    // typing: toggle button state live
     $(document).on(
         'input keyup change',
         '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
@@ -81,7 +62,7 @@
         }
     );
 
-    // form submit: final guard (covers both header + hero forms)
+    // form submit: final guard
     $(document).on('submit', '.searchbar__form', function (e) {
         var $form = $(this);
 
@@ -93,9 +74,9 @@
         }
 
         var $input = getFormInput($form);
-        var val = $.trim($input.val());
+        var val    = $.trim($input.val());
 
-        // remember this value so the same query can't be fired again
+        // remember this value
         setLastValue($form, val);
 
         // disable only THIS form's button
@@ -109,13 +90,12 @@
         if (!isValid($form)) {
             e.preventDefault();
             e.stopImmediatePropagation();
-            console.log('Button click blocked: empty or same value');
+            console.log('Button click blocked: empty or same value (click)');
             return false;
         }
     });
 
-    // ------- native capture-phase handler for Enter -------
-
+    // capture-phase handler for Enter: blocks other scripts from acting first
     ['keydown', 'keypress'].forEach(function (type) {
         document.addEventListener(
             type,
@@ -133,15 +113,13 @@
                     var $form = $(target).closest('.searchbar__form');
 
                     if (!isValid($form)) {
-                        // This runs BEFORE jQuery/typeahead handlers (capture phase),
-                        // so nothing else gets a chance to act on Enter.
                         e.preventDefault();
                         e.stopPropagation();
                         console.log('Enter blocked (capture): empty or same value');
                     }
                 }
             },
-            true // <-- capture phase
+            true // capture phase
         );
     });
 
