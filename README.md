@@ -19,7 +19,7 @@
         if (!$input.data('initialized')) {
             $btn.prop('disabled', true);       
             $input.data('lastValue', "");      
-            $input.data('initialized', true); 
+            $input.data('initialized', true);  
         }
 
         updateButtonState($input);
@@ -40,6 +40,7 @@
             console.log('Search blocked: empty or same value');
             return false;
         }
+
         $input.data('lastValue', $.trim($input.val()));
 
         $form.find('.search-box-button').prop('disabled', true);
