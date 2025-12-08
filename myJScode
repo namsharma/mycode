@@ -13,8 +13,6 @@
         if (!$input.length) return false;
 
         var currentValue = $.trim($input.val());
-
-        // last submitted value for THIS form
         var lastValue = $form.data('lastValue') || "";
 
         // must be non-empty and not the same as last submitted value
@@ -71,23 +69,7 @@
         });
     });
 
-    // ------- events -------
-
-    // focus: just ensure button state is correct
-    $(document).on(
-        'focus',
-        '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
-        function () {
-            var $form = $(this).closest('.searchbar__form');
-
-            if (!$form.data('initialized')) {
-                $form.data('initialized', true);
-                $form.data('lastValue', getInitialLastValue());
-            }
-
-            updateButtonState($form);
-        }
-    );
+    // ------- jQuery events -------
 
     // typing: enable/disable button live
     $(document).on(
@@ -96,24 +78,6 @@
         function () {
             var $form = $(this).closest('.searchbar__form');
             updateButtonState($form);
-        }
-    );
-
-    // ENTER in input: block if empty OR same as last value
-    $(document).on(
-        'keydown',
-        '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
-        function (e) {
-            if (e.key === 'Enter' || e.keyCode === 13) {
-                var $form = $(this).closest('.searchbar__form');
-
-                if (!isValid($form)) {
-                    e.preventDefault();
-                    e.stopImmediatePropagation();
-                    console.log('Enter blocked: empty or same value');
-                    return false;
-                }
-            }
         }
     );
 
@@ -148,6 +112,37 @@
             console.log('Button click blocked: empty or same value');
             return false;
         }
+    });
+
+    // ------- native capture-phase handler for Enter -------
+
+    ['keydown', 'keypress'].forEach(function (type) {
+        document.addEventListener(
+            type,
+            function (e) {
+                var target = e.target;
+
+                if (
+                    !target.matches ||
+                    !target.matches('.search-box-input.searchbar__input.js-search-hero-input.tt-input')
+                ) {
+                    return;
+                }
+
+                if (e.key === 'Enter' || e.keyCode === 13) {
+                    var $form = $(target).closest('.searchbar__form');
+
+                    if (!isValid($form)) {
+                        // This runs BEFORE jQuery/typeahead handlers (capture phase),
+                        // so nothing else gets a chance to act on Enter.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('Enter blocked (capture): empty or same value');
+                    }
+                }
+            },
+            true // <-- capture phase
+        );
     });
 
 })(jQuery);
