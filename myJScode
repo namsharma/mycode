@@ -1,4 +1,7 @@
 (function ($) {
+
+    // ------- helpers -------
+
     function getFormInput($form) {
         return $form
             .find('.search-box-input.searchbar__input.js-search-hero-input.tt-input')
@@ -10,9 +13,11 @@
         if (!$input.length) return false;
 
         var currentValue = $.trim($input.val());
+
+        // last submitted value for THIS form
         var lastValue = $form.data('lastValue') || "";
 
-        // must be non-empty and not same as last submitted value
+        // must be non-empty and not the same as last submitted value
         return currentValue !== "" && currentValue !== lastValue;
     }
 
@@ -21,7 +26,54 @@
         $btn.prop('disabled', !isValid($form));
     }
 
-    // When input gets focus, initialize per-form state
+    function setLastValue($form, value) {
+        $form.data('lastValue', value);
+
+        // also persist globally for next page load
+        try {
+            if (window.sessionStorage) {
+                sessionStorage.setItem('fisLastSearch', value);
+            }
+        } catch (e) {
+            // ignore storage errors
+        }
+    }
+
+    function getInitialLastValue() {
+        var last = "";
+
+        try {
+            // 1) from URL: ?textBoxSearch=...
+            var params = new URLSearchParams(window.location.search);
+            last = params.get('textBoxSearch') || "";
+
+            // 2) fall back to sessionStorage if URL has nothing
+            if (!last && window.sessionStorage) {
+                last = sessionStorage.getItem('fisLastSearch') || "";
+            }
+        } catch (e) {
+            // ignore
+        }
+
+        return $.trim(last || "");
+    }
+
+    // ------- initialisation on page load -------
+
+    $(function () {
+        var initialLast = getInitialLastValue();
+
+        $('.searchbar__form').each(function () {
+            var $form = $(this);
+            $form.data('initialized', true);
+            $form.data('lastValue', initialLast);
+            updateButtonState($form); // in case inputs are prefilled
+        });
+    });
+
+    // ------- events -------
+
+    // focus: just ensure button state is correct
     $(document).on(
         'focus',
         '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
@@ -29,15 +81,15 @@
             var $form = $(this).closest('.searchbar__form');
 
             if (!$form.data('initialized')) {
-                $form.data('lastValue', "");
                 $form.data('initialized', true);
+                $form.data('lastValue', getInitialLastValue());
             }
 
             updateButtonState($form);
         }
     );
 
-    // On typing / changing value, update the correct form's button
+    // typing: enable/disable button live
     $(document).on(
         'input keyup change',
         '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
@@ -47,7 +99,7 @@
         }
     );
 
-    // Block Enter key in the input when invalid
+    // ENTER in input: block if empty OR same as last value
     $(document).on(
         'keydown',
         '.search-box-input.searchbar__input.js-search-hero-input.tt-input',
@@ -65,7 +117,7 @@
         }
     );
 
-    // Block form submit when invalid (covers both forms)
+    // form submit: final guard (covers both header + hero forms)
     $(document).on('submit', '.searchbar__form', function (e) {
         var $form = $(this);
 
@@ -77,13 +129,16 @@
         }
 
         var $input = getFormInput($form);
-        $form.data('lastValue', $.trim($input.val()));
+        var val = $.trim($input.val());
 
-        // Disable only this form's button
+        // remember this value so the same query can't be fired again
+        setLastValue($form, val);
+
+        // disable only THIS form's button
         $form.find('.search-box-button').prop('disabled', true);
     });
 
-    // Block button click when invalid
+    // button click: same validation as submit
     $(document).on('click', '.search-box-button', function (e) {
         var $form = $(this).closest('.searchbar__form');
 
